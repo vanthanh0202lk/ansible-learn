@@ -1,0 +1,13 @@
+---
+- name: Copy one file to all k8s nodes
+  hosts: k8s_cluster
+  become: yes
+
+  tasks:
+    - name: Copy my-note.txt to each node
+      ansible.builtin.copy:
+        src: ./my-note.txt          # file on Ansible control node
+        dest: /tmp/my-note.txt      # path on remote nodes
+        owner: thanh
+        group: thanh
+        mode: '0644'
