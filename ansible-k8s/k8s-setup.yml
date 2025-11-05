@@ -17,7 +17,7 @@
         regexp: '(^.*\sswap\s+sw\s+.*$)'
         replace: '# \1'
 
-    - name: Load kernel modules
+    - name: Load kernel modules config
       ansible.builtin.copy:
         dest: /etc/modules-load.d/k8s.conf
         content: |
@@ -81,12 +81,24 @@
         enabled: yes
 
     # -------- Install kubeadm / kubelet / kubectl ----------
-    - name: Add Kubernetes apt key (new repo format)
-      ansible.builtin.shell: |
-        mkdir -p /etc/apt/keyrings
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg
+    - name: Ensure kubernetes keyring directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Kubernetes apt key (new repo format)
+      ansible.builtin.get_url:
+        url: https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key
+        dest: /tmp/kubernetes-release.key
+        mode: '0644'
+        timeout: 30
+
+    - name: Convert Kubernetes key to keyring
+      ansible.builtin.command: >
+        gpg --dearmor -o /etc/apt/keyrings/kubernetes-archive-keyring.gpg /tmp/kubernetes-release.key
       args:
-        executable: /bin/bash
+        creates: /etc/apt/keyrings/kubernetes-archive-keyring.gpg
 
     - name: Add Kubernetes apt repository (new repo format)
       ansible.builtin.apt_repository:
@@ -178,9 +190,13 @@
   become: yes
 
   tasks:
+    - name: Check if kubelet.conf already exists
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
     - name: Join node to Kubernetes cluster
       ansible.builtin.shell: >
         {{ hostvars[groups['k8s_master'][0]].k8s_join_command.stdout }}
         --cri-socket=unix:///run/containerd/containerd.sock
-      args:
-        creates: /etc/kubernetes/kubelet.conf
+      when: not kubelet_conf.stat.exists
